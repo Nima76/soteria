@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# filepath: /home/nima/paper/final/he-acc/tests.py
+# filepath: /home/nima/paper/final/he/tests.py
 
 import subprocess
 import time
@@ -25,27 +25,77 @@ def run_command(command, verbose=True):
     if result.returncode != 0:
         print(f"Error running command: {command}")
         print(result.stderr)
-        sys.exit(1)
+        raise Exception(f"Command failed with return code {result.returncode}: {result.stderr}")
     return result.stdout
 
 def start_docker_services():
     """Start all Docker services"""
     print("Starting Docker services...")
-    run_command("docker compose up --build -d")
-    print("Docker services started successfully")
+    try:
+        run_command("docker compose up --build -d")
+        print("Docker services started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start Docker services: {str(e)}")
+        sys.exit(1)
 
 def clean_test_environment():
     """Clean the test environment"""
     print("\nCleaning test environment...")
-    run_command("""
-        clear && \\
-        docker exec fhe-enc sh -c "rm -rf /bdt/build/results/* /bdt/build/private_data/* /bdt/build/cryptocontext/*" && \\
-        docker exec fhe-main sh -c "rm -rf /bdt/build/results/*" && \\
-        echo "Cleaning volumes done!" && \\
-        echo "============ Results ===============" && \\
-        docker exec fhe-enc ls /bdt/build/results/ /bdt/build/private_data/ /bdt/build/cryptocontext/ || true && \\
-        echo "============================="
-    """)
+    try:
+        run_command("""
+            clear && \\
+            docker exec fhe-enc sh -c "rm -rf /bdt/build/results/* /bdt/build/private_data/* /bdt/build/cryptocontext/*" && \\
+            docker exec fhe-main sh -c "rm -rf /bdt/build/results/*" && \\
+            echo "Cleaning volumes done!" && \\
+            echo "============ Results ===============" && \\
+            docker exec fhe-enc ls /bdt/build/results/ /bdt/build/private_data/ /bdt/build/cryptocontext/ || true && \\
+            echo "============================="
+        """)
+    except Exception as e:
+        logger.error(f"Failed to clean test environment: {str(e)}")
+        raise
+
+def get_file_sizes():
+    """Get the sizes of generated key and encrypted files"""
+    try:
+        output = run_command("docker exec fhe-enc ls -lh /bdt/build/data", verbose=False)
+        
+        # Initialize sizes
+        sizes = {
+            "public_size": "N/A",
+            "eval_size": "N/A",
+            "enc1_size": "N/A", 
+            "enc2_size": "N/A"
+        }
+        
+        # Parse output to get file sizes
+        for line in output.strip().split("\n"):
+            parts = line.split()
+            if len(parts) >= 5:  # Ensure line has enough parts
+                size = parts[4]  # Size is typically in the 5th column
+                filename = parts[-1]  # Filename is the last part
+                
+                if "key-public.txt" in filename:
+                    sizes["public_size"] = size
+                elif "key-eval-mult.txt" in filename:
+                    sizes["eval_size"] = size
+                elif "enc_file1.txt" in filename:
+                    sizes["enc1_size"] = size
+                elif "enc_file2.txt" in filename:
+                    sizes["enc2_size"] = size
+        
+        logger.info(f"File sizes: Public key: {sizes['public_size']}, Eval key: {sizes['eval_size']}, " +
+                    f"Enc file 1: {sizes['enc1_size']}, Enc file 2: {sizes['enc2_size']}")
+                    
+        return sizes
+    except Exception as e:
+        logger.error(f"Failed to get file sizes: {str(e)}")
+        return {
+            "public_size": "err",
+            "eval_size": "err", 
+            "enc1_size": "err",
+            "enc2_size": "err"
+        }
 
 def run_encryption(security, depth, modulus):
     """Run encryption with specified parameters and return execution time"""
@@ -57,7 +107,7 @@ def run_encryption(security, depth, modulus):
     end_time = time.time()
     
     execution_time = end_time - start_time
-    print(f"Encryption completed in {execution_time:.2f} seconds")
+    print(f"Encryption completed in {execution_time:.10f} seconds")
     return execution_time
 
 def run_main_computation():
@@ -70,7 +120,7 @@ def run_main_computation():
     end_time = time.time()
     
     execution_time = end_time - start_time
-    print(f"Main computation completed in {execution_time:.2f} seconds")
+    print(f"Main computation completed in {execution_time:.10f} seconds")
     return execution_time
 
 def run_decryption():
@@ -83,7 +133,7 @@ def run_decryption():
     end_time = time.time()
     
     execution_time = end_time - start_time
-    print(f"Decryption completed in {execution_time:.2f} seconds")
+    print(f"Decryption completed in {execution_time:.10f} seconds")
     return execution_time, result
 
 def run_tests():
@@ -106,69 +156,146 @@ def run_tests():
                 'depth': int(row[1]),
                 'security': int(row[2]),
                 'modulus': int(row[3].split(',')[0]),  # Split by comma and take first part
-                'enc': 0,
-                'main': 0,
-                'dec': 0
+                'enc': "err",  # Default to error in case test fails
+                'main': "err",
+                'dec': "err",
+                'public_size': "err",
+                'eval_size': "err", 
+                'enc1_size': "err",
+                'enc2_size': "err"
             }
             tests.append(test_data)
     
     # Start Docker services once
     start_docker_services()
     
-    # Run each test
+    # Run each test configuration
     for test in tests:
         print(f"\n\n======= Running Test #{test['test_no']} =======")
         print(f"Parameters: depth={test['depth']}, security={test['security']}, modulus={test['modulus']}")
+        logger.info(f"Starting Test #{test['test_no']} - Depth: {test['depth']}, Security: {test['security']}, Modulus: {test['modulus']}")
         
-        # Clean test environment
-        clean_test_environment()
-        
-        # Run encryption, main computation, and decryption
-        test['enc'] = run_encryption(test['security'], test['depth'], test['modulus'])
-        test['main'] = run_main_computation()
-        test['dec'], dec_results = run_decryption()
-        
-        # Print test results
-        result = dec_results.strip()
-        test_config = f"Test #{test['test_no']} - Depth: {test['depth']}, Security: {test['security']}, Modulus: {test['modulus']}"
-        result_header = f"\n--- Test #{test['test_no']} Results ---"
-        enc_time = f"Encryption time: {test['enc']:.2f} seconds"
-        main_time = f"Main computation time: {test['main']:.2f} seconds"
-        dec_time = f"Decryption time: {test['dec']:.2f} seconds"
-        total_time = f"Total time: {test['enc'] + test['main'] + test['dec']:.2f} seconds"
-        
-        # Print to console
-        print(result_header)
-        print(enc_time)
-        print(main_time)
-        print(dec_time)
-        print(total_time)
-
-        # Log to file
-        logger.info(test_config)
-        logger.info(result_header)
-        logger.info(enc_time)
-        logger.info(main_time)
-        logger.info(dec_time)
-        logger.info(total_time)
-        logger.info(result)
+        try:
+            # Initialize timing accumulators
+            enc_times = []
+            main_times = []
+            dec_times = []
+            all_results = []
+            file_sizes_data = []
+            
+            # Run the test 4 times
+            for run in range(4):
+                print(f"\n--- Run #{run+1} of 4 ---")
+                logger.info(f"Run #{run+1} of 4 for Test #{test['test_no']}")
+                
+                try:
+                    # Clean test environment
+                    clean_test_environment()
+                    
+                    # Run encryption
+                    enc_time = run_encryption(test['security'], test['depth'], test['modulus'])
+                    enc_times.append(enc_time)
+                    
+                    # Get file sizes after encryption (only for the first run - sizes should be the same across runs)
+                    if run == 0:
+                        file_sizes = get_file_sizes()
+                        test['public_size'] = file_sizes['public_size']
+                        test['eval_size'] = file_sizes['eval_size']
+                        test['enc1_size'] = file_sizes['enc1_size']
+                        test['enc2_size'] = file_sizes['enc2_size']
+                        
+                    # Run main computation
+                    main_time = run_main_computation()
+                    main_times.append(main_time)
+                    
+                    # Run decryption
+                    dec_time, dec_results = run_decryption()
+                    dec_times.append(dec_time)
+                    all_results.append(dec_results.strip())
+                    
+                    # Log individual run results
+                    logger.info(f"Run #{run+1} - Encryption: {enc_time:.10f}s, Main: {main_time:.10f}s, Decryption: {dec_time:.10f}s")
+                    
+                except Exception as e:
+                    logger.error(f"Run #{run+1} failed: {str(e)}")
+                    print(f"Error in run #{run+1}: {str(e)}")
+                    # If any run fails, we'll continue to the next run but mark the current one as failed
+                    continue
+            
+            # Calculate averages if we have successful runs
+            if enc_times:
+                test['enc'] = sum(enc_times) / len(enc_times)
+            if main_times:
+                test['main'] = sum(main_times) / len(main_times)
+            if dec_times:
+                test['dec'] = sum(dec_times) / len(dec_times)
+            
+            # Print test results if all phases completed successfully
+            if test['enc'] != "err" and test['main'] != "err" and test['dec'] != "err":
+                test_config = f"Test #{test['test_no']} - Depth: {test['depth']}, Security: {test['security']}, Modulus: {test['modulus']}"
+                result_header = f"\n--- Test #{test['test_no']} Average Results ({len(enc_times)} runs) ---"
+                enc_time = f"Avg Encryption time: {test['enc']:.10f} seconds"
+                main_time = f"Avg Main computation time: {test['main']:.10f} seconds"
+                dec_time = f"Avg Decryption time: {test['dec']:.10f} seconds"
+                total_time = f"Avg Total time: {test['enc'] + test['main'] + test['dec']:.10f} seconds"
+                file_sizes_info = f"File sizes: Public key: {test['public_size']}, Eval key: {test['eval_size']}, " + \
+                                 f"Enc file 1: {test['enc1_size']}, Enc file 2: {test['enc2_size']}"
+                
+                # Print to console
+                print(result_header)
+                print(enc_time)
+                print(main_time)
+                print(dec_time)
+                print(total_time)
+                print(file_sizes_info)
+                
+                # Log to file
+                logger.info(result_header)
+                logger.info(test_config)
+                logger.info(enc_time)
+                logger.info(main_time)
+                logger.info(dec_time)
+                logger.info(total_time)
+                logger.info(file_sizes_info)
+                if all_results:
+                    logger.info(f"Last run result: {all_results[-1]}")
+            else:
+                # Log failure
+                logger.error(f"Test #{test['test_no']} failed to complete all phases successfully")
+                print(f"Test #{test['test_no']} failed")
+                
+        except Exception as e:
+            # If any part fails, log the error but continue to the next test
+            logger.error(f"Test #{test['test_no']} failed with error: {str(e)}")
+            print(f"Error in test #{test['test_no']}: {str(e)}")
+            # test values remain as "err" since they were initialized that way
     
     # Write results back to CSV
     with open('tests_results.csv', 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(['test_no', 'depth', 'security', 'modulus', 'enc', 'main', 'dec'])
+        writer.writerow(['test_no', 'depth', 'security', 'modulus', 'enc', 'main', 'dec', 
+                         'public_size', 'eval_size', 'enc1_size', 'enc2_size'])
         for test in tests:
+            # Format numeric values with high precision or keep "err" string
+            enc_value = f"{test['enc']:.10f}" if isinstance(test['enc'], float) else test['enc']
+            main_value = f"{test['main']:.10f}" if isinstance(test['main'], float) else test['main']
+            dec_value = f"{test['dec']:.10f}" if isinstance(test['dec'], float) else test['dec']
+            
             writer.writerow([
                 test['test_no'],
                 test['depth'], 
                 test['security'],
                 test['modulus'],
-                f"{test['enc']:.2f}",
-                f"{test['main']:.2f}",
-                f"{test['dec']:.2f}"
+                enc_value,
+                main_value,
+                dec_value,
+                test['public_size'],
+                test['eval_size'],
+                test['enc1_size'],
+                test['enc2_size']
             ])
     
-    print("\nAll tests completed successfully!")
+    print("\nAll tests completed!")
     print(f"Results saved to tests_results.csv")
 
 if __name__ == "__main__":
