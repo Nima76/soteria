@@ -22,7 +22,7 @@ const std::string RESULTSFOLDER = "data";
 const std::string CRYPTOCONTEXT = "cryptocontext";
 
 
-void saveConfigParameters(int multDepth, int plainModulus, int securityLevel, const std::string& configFile = "data/config_params.txt") {
+void saveConfigParameters(int multDepth, int plainModulus, int securityLevel, const std::string& configFile = RESULTSFOLDER + "/config_params.txt") {
     std::ofstream outFile(configFile);
     if (!outFile.is_open()) {
         std::cerr << "Error: Could not open configuration file for writing: " << configFile << std::endl;
