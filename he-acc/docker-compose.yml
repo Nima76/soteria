@@ -1,0 +1,61 @@
+version: '3.9'
+
+services:
+
+  # FHE ENCRYPTOR
+  fhe-encryptor:
+    build: ./enc
+    container_name: fhe-enc
+    volumes:
+      - /home/nima/paper/datasets/:/bdt/build/tee_data
+      - encrypted_data:/bdt/build/data
+      - cryptocontext:/bdt/build/cryptocontext
+      - private_key:/bdt/build/private_data
+    command: tail -f /dev/null
+    networks:
+      - soteria_network
+
+
+  # FHE MAIN
+  fhe-main:
+    build: ./main
+    container_name: fhe-main
+    volumes:
+      - analytics_results:/bdt/build/results
+      - encrypted_data:/bdt/build/data
+
+      - cryptocontext:/bdt/build/cryptocontext
+      
+    command: tail -f /dev/null  
+    networks:
+      - soteria_network
+  
+  
+  # FHE DECRYPTOR
+  fhe-decryptor:
+    build: ./dec
+    container_name: fhe-dec
+    command: tail -f /dev/null
+    volumes:
+      - analytics_results:/bdt/build/data
+      - cryptocontext:/bdt/build/cryptocontext/
+      - private_key:/bdt/build/private_data
+      
+     
+    networks:
+      - soteria_network
+
+
+networks:
+  soteria_network:
+    name: "soteria_network"
+    external: true
+
+
+volumes:
+  encrypted_data:
+  private_key:
+  analytics_results:
+  cryptocontext:
+
+
