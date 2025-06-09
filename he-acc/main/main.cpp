@@ -79,7 +79,7 @@ int main()
             << p1 << ", " << p2 << ", " << p3 << ", "
             << p4 << ", " << p5 << ", " << p6 << ", " << p7 << std::endl;
 
-    } else if (depth > 2 && depth <= 5) {
+    } else if (depth >= 2 && depth <= 5) {
         p1 = 32;
         p2 = 512;
         p3 = 6;
@@ -200,7 +200,7 @@ int main()
     #if defined(WITH_CUDA)
     cudaUtils.destroy();
     #endif
-    
+
     //main return value
     return 0;
 }
