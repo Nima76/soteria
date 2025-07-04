@@ -43,7 +43,7 @@ COPY . .
 
 
 RUN cp /usr/src/app/openfhe-uniman/CMakeLists.User.txt ./CMakeLists.txt
-#RUN echo "add_executable(fhe-dec fhe-dec.cpp)" >> CMakeLists.txt
+RUN echo "find_package(Threads REQUIRED)" >> CMakeLists.txt
 RUN echo "add_executable(fhe-dec dec.cpp)" >> CMakeLists.txt
 
 RUN mkdir -p /bdt/build/data /bdt/build/results /bdt/build/timing /bdt/build/cryptocontext /bdt/build/private_data
