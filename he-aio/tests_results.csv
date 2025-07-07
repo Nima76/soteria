@@ -1,0 +1,2 @@
+test_no,depth,security,modulus,enc,main,dec,public_size,eval_size,enc1_size,enc2_size
+1,1,128,786433,0.1166048050,0.1102039814,0.0912565589,642K,1.3M,386K,386K
