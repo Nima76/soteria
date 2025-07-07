@@ -6,6 +6,7 @@ import time
 import csv
 import os
 import sys
+import pandas as pd
 from loguru import logger
 import functools
 
@@ -30,20 +31,6 @@ def run_command(cmd):
     print(stdout)
     print('========================================')
     return stdout
-
-
-def run_command2(command, verbose=True):
-    """Run a shell command and return output"""
-    if verbose:
-        print(f"Running: {command}")
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
-    if verbose and result.stdout:
-        print(result.stdout)
-    if result.returncode != 0:
-        print(f"Error running command: {command}")
-        print(result.stderr)
-        raise Exception(f"Command failed with return code {result.returncode}: {result.stderr}")
-    return result.stdout
 
 def start_docker_services():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -72,85 +59,346 @@ def clean_test_environment():
         raise
 
 def get_file_sizes():
-    """Get the sizes of generated key and encrypted files"""
+    """Get the sizes of generated key and encrypted files in bytes"""
     try:
-        output = run_command("docker exec fhe-aio ls -lh /bdt/build/data")
+        output = run_command("docker exec fhe-aio ls -la /bdt/build/data")
 
         # Initialize sizes
         sizes = {
-            "public_size": "N/A",
-            "eval_size": "N/A",
-            "enc1_size": "N/A", 
-            "enc2_size": "N/A"
+            "public_size": 0,
+            "eval_size": 0,
+            "enc1_size": 0, 
+            "enc2_size": 0
         }
         
         # Parse output to get file sizes
         for line in output.strip().split("\n"):
             parts = line.split()
             if len(parts) >= 5:  # Ensure line has enough parts
-                size = parts[4]  # Size is typically in the 5th column
-                filename = parts[-1]  # Filename is the last part
-                
-                if "key-public.txt" in filename:
-                    sizes["public_size"] = size
-                elif "key-eval-mult.txt" in filename:
-                    sizes["eval_size"] = size
-                elif "enc_file1.txt" in filename:
-                    sizes["enc1_size"] = size
-                elif "enc_file2.txt" in filename:
-                    sizes["enc2_size"] = size
+                try:
+                    size_bytes = int(parts[4])  # Size in bytes (5th column)
+                    filename = parts[-1]  # Filename is the last part
+                    
+                    if "key-public.txt" in filename:
+                        sizes["public_size"] = size_bytes
+                    elif "key-eval-mult.txt" in filename:
+                        sizes["eval_size"] = size_bytes
+                    elif "enc_file1.txt" in filename:
+                        sizes["enc1_size"] = size_bytes
+                    elif "enc_file2.txt" in filename:
+                        sizes["enc2_size"] = size_bytes
+                except ValueError:
+                    # Skip lines where size is not a number (like directory entries)
+                    continue
         
-        logger.info(f"File sizes: Public key: {sizes['public_size']}, Eval key: {sizes['eval_size']}, " +
-                    f"Enc file 1: {sizes['enc1_size']}, Enc file 2: {sizes['enc2_size']}")
+        logger.info(f"File sizes: Public key: {sizes['public_size']} bytes, Eval key: {sizes['eval_size']} bytes, " +
+                    f"Enc file 1: {sizes['enc1_size']} bytes, Enc file 2: {sizes['enc2_size']} bytes")
                     
         return sizes
     except Exception as e:
         logger.error(f"Failed to get file sizes: {str(e)}")
         return {
-            "public_size": "err",
-            "eval_size": "err", 
-            "enc1_size": "err",
-            "enc2_size": "err"
+            "public_size": 0,
+            "eval_size": 0, 
+            "enc1_size": 0,
+            "enc2_size": 0
         }
 
 def run_encryption(security, depth, modulus):
-    """Run encryption with specified parameters and return execution time"""
+    """Run encryption with specified parameters"""
     print("\nRunning FHE encryption...")
     print("=============================")
     
-    start_time = time.time()
     run_command(f"docker exec fhe-aio ./fhe-enc --security {security} --depth {depth} --modulus {modulus}")
-    end_time = time.time()
-    
-    execution_time = end_time - start_time
-    print(f"Encryption completed in {execution_time:.10f} seconds")
-    return execution_time
+    print("Encryption completed")
 
 def run_main_computation():
-    """Run main computation and return execution time"""
+    """Run main computation"""
     print("\nRunning FHE main...")
     print("=============================")
     
-    start_time = time.time()
     run_command("docker exec fhe-aio ./fhe-main")
-    end_time = time.time()
-    
-    execution_time = end_time - start_time
-    print(f"Main computation completed in {execution_time:.10f} seconds")
-    return execution_time
+    print("Main computation completed")
 
 def run_decryption():
-    """Run decryption and return execution time"""
+    """Run decryption"""
     print("\nRunning FHE decryption...")
     print("=============================")
     
-    start_time = time.time()
     result = run_command("docker exec fhe-aio ./fhe-dec")
-    end_time = time.time()
+    print("Decryption completed")
+    return result
+
+def copy_csv_files_from_container():
+    """Copy CSV timing files from container to host"""
+    try:
+        # Copy CSV files from container to host
+        run_command("docker cp fhe-aio:/bdt/build/enc_timing_results.csv ./enc_timing_results.csv")
+        run_command("docker cp fhe-aio:/bdt/build/main_timing_results.csv ./main_timing_results.csv") 
+        run_command("docker cp fhe-aio:/bdt/build/dec_timing_results.csv ./dec_timing_results.csv")
+        print("CSV files copied from container successfully")
+    except Exception as e:
+        logger.error(f"Failed to copy CSV files: {str(e)}")
+        raise
+
+def read_timing_data():
+    """Read timing data from CSV files generated by C++ applications"""
+    timing_data = {
+        'enc': [],
+        'main': [],
+        'dec': []
+    }
     
-    execution_time = end_time - start_time
-    print(f"Decryption completed in {execution_time:.10f} seconds")
-    return execution_time, result
+    try:
+        # Read encryption timing data
+        if os.path.exists('enc_timing_results.csv'):
+            with open('enc_timing_results.csv', 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    timing_data['enc'].append(row)
+        
+        # Read main computation timing data
+        if os.path.exists('main_timing_results.csv'):
+            with open('main_timing_results.csv', 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    timing_data['main'].append(row)
+        
+        # Read decryption timing data
+        if os.path.exists('dec_timing_results.csv'):
+            with open('dec_timing_results.csv', 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    timing_data['dec'].append(row)
+                    
+    except Exception as e:
+        logger.error(f"Failed to read timing data: {str(e)}")
+        
+    return timing_data
+
+def consolidate_timing_data():
+    """Consolidate all timing data into a single comprehensive CSV file"""
+    try:
+        # Read all timing data
+        timing_data = read_timing_data()
+        
+        # Create consolidated data structure
+        consolidated_data = []
+        
+        # Process encryption data
+        for row in timing_data['enc']:
+            consolidated_row = {
+                'timestamp': row['timestamp'],
+                'phase': row['phase'],
+                'depth': row['depth'],
+                'modulus': row['modulus'],
+                'security': row['security'],
+                'enc_context_time': row.get('context_time', ''),
+                'enc_keygen_time': row.get('keygen_time', ''),
+                'enc_encrypt_time': row.get('encrypt_time', ''),
+                'enc_serialize_time': row.get('serialize_time', ''),
+                'enc_total_time': row.get('total_time', ''),
+                'main_deserialize_time': '',
+                'main_computation_time': '',
+                'main_serialize_time': '',
+                'main_total_time': '',
+                'dec_deserialize_time': '',
+                'dec_decrypt_time': '',
+                'dec_save_time': '',
+                'dec_total_time': ''
+            }
+            consolidated_data.append(consolidated_row)
+        
+        # Process main computation data
+        for row in timing_data['main']:
+            consolidated_row = {
+                'timestamp': row['timestamp'],
+                'phase': row['phase'],
+                'depth': row['depth'],
+                'modulus': row['modulus'],
+                'security': row['security'],
+                'enc_context_time': '',
+                'enc_keygen_time': '',
+                'enc_encrypt_time': '',
+                'enc_serialize_time': '',
+                'enc_total_time': '',
+                'main_deserialize_time': row.get('deserialize_time', ''),
+                'main_computation_time': row.get('computation_time', ''),
+                'main_serialize_time': row.get('serialize_time', ''),
+                'main_total_time': row.get('total_time', ''),
+                'dec_deserialize_time': '',
+                'dec_decrypt_time': '',
+                'dec_save_time': '',
+                'dec_total_time': ''
+            }
+            consolidated_data.append(consolidated_row)
+        
+        # Process decryption data
+        for row in timing_data['dec']:
+            consolidated_row = {
+                'timestamp': row['timestamp'],
+                'phase': row['phase'],
+                'depth': row['depth'],
+                'modulus': row['modulus'],
+                'security': row['security'],
+                'enc_context_time': '',
+                'enc_keygen_time': '',
+                'enc_encrypt_time': '',
+                'enc_serialize_time': '',
+                'enc_total_time': '',
+                'main_deserialize_time': '',
+                'main_computation_time': '',
+                'main_serialize_time': '',
+                'main_total_time': '',
+                'dec_deserialize_time': row.get('deserialize_time', ''),
+                'dec_decrypt_time': row.get('decrypt_time', ''),
+                'dec_save_time': row.get('save_time', ''),
+                'dec_total_time': row.get('total_time', '')
+            }
+            consolidated_data.append(consolidated_row)
+        
+        # Write consolidated data to CSV
+        if consolidated_data:
+            with open('consolidated_timing_results.csv', 'w', newline='') as f:
+                fieldnames = [
+                    'timestamp', 'phase', 'depth', 'modulus', 'security',
+                    'enc_context_time', 'enc_keygen_time', 'enc_encrypt_time', 'enc_serialize_time', 'enc_total_time',
+                    'main_deserialize_time', 'main_computation_time', 'main_serialize_time', 'main_total_time',
+                    'dec_deserialize_time', 'dec_decrypt_time', 'dec_save_time', 'dec_total_time'
+                ]
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(consolidated_data)
+            
+            print("Consolidated timing data saved to consolidated_timing_results.csv")
+            logger.info("Consolidated timing data created successfully")
+        else:
+            print("No timing data found to consolidate")
+            logger.warning("No timing data found to consolidate")
+            
+    except Exception as e:
+        logger.error(f"Failed to consolidate timing data: {str(e)}")
+
+def calculate_test_summary_with_sizes(tests):
+    """Calculate summary statistics for each test configuration including file sizes"""
+    try:
+        timing_data = read_timing_data()
+        
+        # Group data by test configuration
+        test_groups = {}
+        
+        for phase in ['enc', 'main', 'dec']:
+            for row in timing_data[phase]:
+                key = f"{row['depth']}_{row['modulus']}_{row['security']}"
+                if key not in test_groups:
+                    test_groups[key] = {
+                        'depth': row['depth'],
+                        'modulus': row['modulus'],
+                        'security': row['security'],
+                        'enc_times': [],
+                        'main_times': [],
+                        'dec_times': []
+                    }
+                
+                if phase == 'enc':
+                    test_groups[key]['enc_times'].append(float(row['total_time']))
+                elif phase == 'main':
+                    test_groups[key]['main_times'].append(float(row['total_time']))
+                elif phase == 'dec':
+                    test_groups[key]['dec_times'].append(float(row['total_time']))
+        
+        # Calculate averages and write summary with file sizes
+        with open('test_summary.csv', 'w', newline='') as f:
+            fieldnames = [
+                'test_number', 'depth', 'modulus', 'security', 
+                'avg_enc_time', 'avg_main_time', 'avg_dec_time', 'avg_total_time',
+                'public_key_size_bytes', 'eval_key_size_bytes', 'enc1_size_bytes', 'enc2_size_bytes'
+            ]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for test in tests:
+                if test['status'] == 'completed':
+                    key = f"{test['depth']}_{test['modulus']}_{test['security']}"
+                    if key in test_groups:
+                        data = test_groups[key]
+                        avg_enc = sum(data['enc_times']) / len(data['enc_times']) if data['enc_times'] else 0
+                        avg_main = sum(data['main_times']) / len(data['main_times']) if data['main_times'] else 0
+                        avg_dec = sum(data['dec_times']) / len(data['dec_times']) if data['dec_times'] else 0
+                        avg_total = avg_enc + avg_main + avg_dec
+                        
+                        # Get file sizes for this test
+                        file_sizes = test.get('file_sizes', {})
+                        
+                        writer.writerow({
+                            'test_number': test['test_no'],
+                            'depth': test['depth'],
+                            'modulus': test['modulus'],
+                            'security': test['security'],
+                            'avg_enc_time': f"{avg_enc:.10f}",
+                            'avg_main_time': f"{avg_main:.10f}",
+                            'avg_dec_time': f"{avg_dec:.10f}",
+                            'avg_total_time': f"{avg_total:.10f}",
+                            'public_key_size_bytes': file_sizes.get('public_size', 0),
+                            'eval_key_size_bytes': file_sizes.get('eval_size', 0),
+                            'enc1_size_bytes': file_sizes.get('enc1_size', 0),
+                            'enc2_size_bytes': file_sizes.get('enc2_size', 0)
+                        })
+        
+        print("Test summary with file sizes saved to test_summary.csv")
+        logger.info("Test summary with file sizes created successfully")
+        
+    except Exception as e:
+        logger.error(f"Failed to calculate test summary with file sizes: {str(e)}")
+
+def calculate_test_summary():
+    """Legacy function - redirects to new function with file sizes"""
+    logger.warning("Using legacy calculate_test_summary - file sizes will not be included")
+    return calculate_test_summary_with_sizes([])
+
+
+def format_file_size(size_bytes):
+    """Convert bytes to human readable format"""
+    if size_bytes == 0:
+        return "0 B"
+    
+    size_names = ["B", "KB", "MB", "GB"]
+    i = 0
+    while size_bytes >= 1024 and i < len(size_names) - 1:
+        size_bytes /= 1024.0
+        i += 1
+    
+    return f"{size_bytes:.2f} {size_names[i]}"
+
+def create_human_readable_summary(tests):
+    """Create an additional summary with human-readable file sizes"""
+    try:
+        with open('test_summary_readable.csv', 'w', newline='') as f:
+            fieldnames = [
+                'test_number', 'depth', 'modulus', 'security',
+                'public_key_size', 'eval_key_size', 'enc1_size', 'enc2_size'
+            ]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for test in tests:
+                if test['status'] == 'completed' and 'file_sizes' in test:
+                    file_sizes = test['file_sizes']
+                    writer.writerow({
+                        'test_number': test['test_no'],
+                        'depth': test['depth'],
+                        'modulus': test['modulus'],
+                        'security': test['security'],
+                        'public_key_size': format_file_size(file_sizes.get('public_size', 0)),
+                        'eval_key_size': format_file_size(file_sizes.get('eval_size', 0)),
+                        'enc1_size': format_file_size(file_sizes.get('enc1_size', 0)),
+                        'enc2_size': format_file_size(file_sizes.get('enc2_size', 0))
+                    })
+        
+        print("Human-readable file sizes saved to test_summary_readable.csv")
+        
+    except Exception as e:
+        logger.error(f"Failed to create human-readable summary: {str(e)}")
 
 def run_tests():
     """Run all tests from the CSV file"""
@@ -172,13 +420,8 @@ def run_tests():
                 'depth': int(row[1]),
                 'security': int(row[2]),
                 'modulus': int(row[3].split(',')[0]),  # Split by comma and take first part
-                'enc': "err",  # Default to error in case test fails
-                'main': "err",
-                'dec': "err",
-                'public_size': "err",
-                'eval_size': "err", 
-                'enc1_size': "err",
-                'enc2_size': "err"
+                'status': 'pending',
+                'file_sizes': {}  # Add file sizes storage
             }
             tests.append(test_data)
     
@@ -192,13 +435,6 @@ def run_tests():
         logger.info(f"Starting Test #{test['test_no']} - Depth: {test['depth']}, Security: {test['security']}, Modulus: {test['modulus']}")
         
         try:
-            # Initialize timing accumulators
-            enc_times = []
-            main_times = []
-            dec_times = []
-            all_results = []
-            file_sizes_data = []
-            
             # Run the test 4 times
             for run in range(4):
                 print(f"\n--- Run #{run+1} of 4 ---")
@@ -209,110 +445,64 @@ def run_tests():
                     clean_test_environment()
                     
                     # Run encryption
-                    enc_time = run_encryption(test['security'], test['depth'], test['modulus'])
-                    enc_times.append(enc_time)
+                    run_encryption(test['security'], test['depth'], test['modulus'])
                     
-                    # Get file sizes after encryption (only for the first run - sizes should be the same across runs)
+                    # Get file sizes after encryption (only for the first run)
                     if run == 0:
                         file_sizes = get_file_sizes()
-                        test['public_size'] = file_sizes['public_size']
-                        test['eval_size'] = file_sizes['eval_size']
-                        test['enc1_size'] = file_sizes['enc1_size']
-                        test['enc2_size'] = file_sizes['enc2_size']
+                        test['file_sizes'] = file_sizes  # Store file sizes for this test
+                        logger.info(f"File sizes for Test #{test['test_no']}: {file_sizes}")
                         
                     # Run main computation
-                    main_time = run_main_computation()
-                    main_times.append(main_time)
+                    run_main_computation()
                     
                     # Run decryption
-                    dec_time, dec_results = run_decryption()
-                    dec_times.append(dec_time)
-                    all_results.append(dec_results.strip())
+                    dec_results = run_decryption()
                     
-                    # Log individual run results
-                    logger.info(f"Run #{run+1} - Encryption: {enc_time:.10f}s, Main: {main_time:.10f}s, Decryption: {dec_time:.10f}s")
+                    # Log individual run completion
+                    logger.info(f"Run #{run+1} completed successfully")
                     
                 except Exception as e:
                     logger.error(f"Run #{run+1} failed: {str(e)}")
                     print(f"Error in run #{run+1}: {str(e)}")
-                    # If any run fails, we'll continue to the next run but mark the current one as failed
                     continue
-                time.sleep(5)
-            # Calculate averages if we have successful runs
-            if enc_times:
-                test['enc'] = sum(enc_times) / len(enc_times)
-            if main_times:
-                test['main'] = sum(main_times) / len(main_times)
-            if dec_times:
-                test['dec'] = sum(dec_times) / len(dec_times)
+                    
+                time.sleep(5)  # Wait between runs
             
-            # Print test results if all phases completed successfully
-            if test['enc'] != "err" and test['main'] != "err" and test['dec'] != "err":
-                test_config = f"Test #{test['test_no']} - Depth: {test['depth']}, Security: {test['security']}, Modulus: {test['modulus']}"
-                result_header = f"\n--- Test #{test['test_no']} Average Results ({len(enc_times)} runs) ---"
-                enc_time = f"Avg Encryption time: {test['enc']:.10f} seconds"
-                main_time = f"Avg Main computation time: {test['main']:.10f} seconds"
-                dec_time = f"Avg Decryption time: {test['dec']:.10f} seconds"
-                total_time = f"Avg Total time: {test['enc'] + test['main'] + test['dec']:.10f} seconds"
-                file_sizes_info = f"File sizes: Public key: {test['public_size']}, Eval key: {test['eval_size']}, " + \
-                                 f"Enc file 1: {test['enc1_size']}, Enc file 2: {test['enc2_size']}"
-                
-                # Print to console
-                print(result_header)
-                print(enc_time)
-                print(main_time)
-                print(dec_time)
-                print(total_time)
-                print(file_sizes_info)
-                
-                # Log to file
-                logger.info(result_header)
-                logger.info(test_config)
-                logger.info(enc_time)
-                logger.info(main_time)
-                logger.info(dec_time)
-                logger.info(total_time)
-                logger.info(file_sizes_info)
-                if all_results:
-                    logger.info(f"Last run result: {all_results[-1]}")
-            else:
-                # Log failure
-                logger.error(f"Test #{test['test_no']} failed to complete all phases successfully")
-                print(f"Test #{test['test_no']} failed")
+            test['status'] = 'completed'
+            logger.info(f"Test #{test['test_no']} completed successfully")
                 
         except Exception as e:
             # If any part fails, log the error but continue to the next test
             logger.error(f"Test #{test['test_no']} failed with error: {str(e)}")
             print(f"Error in test #{test['test_no']}: {str(e)}")
-            # test values remain as "err" since they were initialized that way
-        time.sleep(10)  # Wait a bit before next test to avoid resource contention
-    # Write results back to CSV
-    with open('tests_results.csv', 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['test_no', 'depth', 'security', 'modulus', 'enc', 'main', 'dec', 
-                         'public_size', 'eval_size', 'enc1_size', 'enc2_size'])
-        for test in tests:
-            # Format numeric values with high precision or keep "err" string
-            enc_value = f"{test['enc']:.10f}" if isinstance(test['enc'], float) else test['enc']
-            main_value = f"{test['main']:.10f}" if isinstance(test['main'], float) else test['main']
-            dec_value = f"{test['dec']:.10f}" if isinstance(test['dec'], float) else test['dec']
+            test['status'] = 'failed'
             
-            writer.writerow([
-                test['test_no'],
-                test['depth'], 
-                test['security'],
-                test['modulus'],
-                enc_value,
-                main_value,
-                dec_value,
-                test['public_size'],
-                test['eval_size'],
-                test['enc1_size'],
-                test['enc2_size']
-            ])
+        time.sleep(10)  # Wait between tests
+    
+    # Copy CSV files from container after all tests
+    print("\nCopying timing CSV files from container...")
+    copy_csv_files_from_container()
+    
+    # Consolidate timing data
+    print("\nConsolidating timing data...")
+    consolidate_timing_data()
+    
+    # Calculate test summary with file sizes
+    print("\nCalculating test summary...")
+    calculate_test_summary_with_sizes(tests)
+
+    # Optional: Create human-readable summary
+    print("\nCreating human-readable file size summary...")
+    create_human_readable_summary(tests)
     
     print("\nAll tests completed!")
-    print(f"Results saved to tests_results.csv")
+    print("Generated files:")
+    print("- consolidated_timing_results.csv: Detailed timing data from all phases")
+    print("- test_summary.csv: Summary statistics for each test configuration with file sizes")
+    print("- enc_timing_results.csv: Encryption timing data")
+    print("- main_timing_results.csv: Main computation timing data")
+    print("- dec_timing_results.csv: Decryption timing data")
 
 if __name__ == "__main__":
     run_tests()

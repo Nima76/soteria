@@ -6,6 +6,10 @@
 #include <filesystem>
 #include <string>
 #include <cmath>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <ctime>
 
 // header files needed for serialization
 #include "ciphertext-ser.h"
@@ -51,9 +55,52 @@ std::tuple<int, int, int> loadConfigParameters(const std::string& configFile = D
     return {depth, modulus, security};
 }
 
-
-
-//binary decision trees
+void saveTimingToCSV(const std::string& phase, 
+                     int depth, int modulus, int security,
+                     double deserialize_time, double computation_time, 
+                     double serialize_time, double total_time,
+                     const std::string& csvFile = "main_timing_results.csv") {
+    
+    // Check if file exists to determine if we need to write headers
+    bool fileExists = false;
+    std::ifstream checkFile(csvFile);
+    if (checkFile.good()) {
+        fileExists = true;
+    }
+    checkFile.close();
+    
+    // Open file in append mode
+    std::ofstream outFile(csvFile, std::ios::app);
+    if (!outFile.is_open()) {
+        std::cerr << "Error: Could not open CSV file for writing: " << csvFile << std::endl;
+        return;
+    }
+    
+    // Write headers if file is new
+    if (!fileExists) {
+        outFile << "timestamp,phase,depth,modulus,security,deserialize_time,"
+                << "computation_time,serialize_time,total_time" << std::endl;
+    }
+    
+    // Get current timestamp
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto tm = *std::localtime(&time_t);
+    
+    // Write data row
+    outFile << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << ","
+            << phase << ","
+            << depth << ","
+            << modulus << ","
+            << security << ","
+            << std::fixed << std::setprecision(10) << deserialize_time << ","
+            << computation_time << ","
+            << serialize_time << ","
+            << total_time << std::endl;
+    
+    outFile.close();
+    std::cout << "Timing results saved to " << csvFile << std::endl;
+}
 
 /////////////////////////////////////////////
 //                                         //
@@ -63,14 +110,19 @@ std::tuple<int, int, int> loadConfigParameters(const std::string& configFile = D
 
 int main()
 {
+    auto start_total = std::chrono::high_resolution_clock::now();
+    
     auto [depth, modulus, security] = loadConfigParameters();
-	
+    
     //getting the depth
-	//int depth = calculateDepth(DATAFOLDER);
-	//int depth = atoi(argv[1]);
-	
-	//getting the crypto-context and the the public keys
-	CryptoContext<DCRTPoly> cc;
+    //int depth = calculateDepth(DATAFOLDER);
+    //int depth = atoi(argv[1]);
+    
+    // Time deserialization
+    auto start_deserialize = std::chrono::high_resolution_clock::now();
+    
+    //getting the crypto-context and the the public keys
+    CryptoContext<DCRTPoly> cc;
 
     if (!Serial::DeserializeFromFile(CRYPTOCONTEXT + "/cryptocontext.txt", cc, SerType::BINARY)) {
         std::cerr << "I cannot read serialization from " << CRYPTOCONTEXT + "/cryptocontext.txt" << std::endl;
@@ -103,21 +155,58 @@ int main()
     }
     std::cout << "a ciphertext has been deserialized." << std::endl;
 
-	Ciphertext<DCRTPoly> ciphertext2;
-	if (Serial::DeserializeFromFile(DATAFOLDER + "/" + "enc_file2.txt", ciphertext2, SerType::BINARY) == false) {
-		std::cerr << "Could not read the ciphertext" << std::endl;
-	}
-
+    Ciphertext<DCRTPoly> ciphertext2;
+    if (Serial::DeserializeFromFile(DATAFOLDER + "/" + "enc_file2.txt", ciphertext2, SerType::BINARY) == false) {
+        std::cerr << "Could not read the ciphertext" << std::endl;
+    }
+    
+    auto end_deserialize = std::chrono::high_resolution_clock::now();
+    
+    // Time homomorphic computation
+    auto start_computation = std::chrono::high_resolution_clock::now();
+    
     auto ciphertextMultResult = ciphertext1;
     for (int i = 0; i < depth; i++) {
         ciphertextMultResult = cc->EvalMult(ciphertextMultResult, ciphertext2);
     }
-	//serializing the final result
-	if (!Serial::SerializeToFile(RESULTSFOLDER + "/" + "output_ciphertext.txt", ciphertextMultResult, SerType::BINARY)) {
+    
+    auto end_computation = std::chrono::high_resolution_clock::now();
+    
+    // Time serialization
+    auto start_serialize = std::chrono::high_resolution_clock::now();
+    
+    //serializing the final result
+    if (!Serial::SerializeToFile(RESULTSFOLDER + "/" + "output_ciphertext.txt", ciphertextMultResult, SerType::BINARY)) {
         std::cerr << "Error writing serialization of output ciphertext to output_ciphertext.txt" << std::endl;
         return 1;
     }
     std::cout << "The output ciphertext has been serialized." << std::endl;
+    
+    auto end_serialize = std::chrono::high_resolution_clock::now();
+    auto end_total = std::chrono::high_resolution_clock::now();
+    
+    // Calculate durations in microseconds
+    auto deserialize_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_deserialize - start_deserialize);
+    auto computation_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_computation - start_computation);
+    auto serialize_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_serialize - start_serialize);
+    auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total);
+
+    // Convert to seconds
+    double deserialize_time = deserialize_duration.count() / 1000000.0;
+    double computation_time = computation_duration.count() / 1000000.0;
+    double serialize_time = serialize_duration.count() / 1000000.0;
+    double total_time = total_duration.count() / 1000000.0;
+
+    // Output timing results in a parseable format
+    std::cout << "=== TIMING_RESULTS ===" << std::endl;
+    std::cout << "MAIN_DESERIALIZE_TIME: " << deserialize_time << std::endl;
+    std::cout << "MAIN_COMPUTATION_TIME: " << computation_time << std::endl;
+    std::cout << "MAIN_SERIALIZE_TIME: " << serialize_time << std::endl;
+    std::cout << "MAIN_TOTAL_TIME: " << total_time << std::endl;
+    
+    // Save to CSV
+    saveTimingToCSV("computation", depth, modulus, security,
+                    deserialize_time, computation_time, serialize_time, total_time);
     
     //////////////////////////////
     //////////////////////////////
