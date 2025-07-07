@@ -1,0 +1,50 @@
+# Copyright (C) 2023 Gramine contributors
+# SPDX-License-Identifier: BSD-3-Clause
+
+ARCH_LIBDIR ?= /lib/x86_64-linux-gnu
+
+ifeq ($(DEBUG),1)
+GRAMINE_LOG_LEVEL = debug
+else
+GRAMINE_LOG_LEVEL = error
+endif
+
+.PHONY: all
+all: enc.manifest
+ifeq ($(SGX),1)
+all: enc.manifest.sgx enc.sig
+endif
+
+RA_TYPE ?= none
+RA_CLIENT_SPID ?=
+RA_CLIENT_LINKABLE ?= 0
+
+enc.manifest: enc.manifest.template
+	gramine-manifest \
+		-Dlog_level=$(GRAMINE_LOG_LEVEL) \
+		-Darch_libdir=$(ARCH_LIBDIR) \
+		-Dentrypoint=/bdt/build/fhe-enc \
+		-Dra_type=$(RA_TYPE) \
+		-Dra_client_spid=$(RA_CLIENT_SPID) \
+		-Dra_client_linkable=$(RA_CLIENT_LINKABLE) \
+		$< >$@
+
+# Make on Ubuntu <= 20.04 doesn't support "Rules with Grouped Targets" (`&:`),
+# see the helloworld example for details on this workaround.
+enc.manifest.sgx enc.sig: sgx_sign_enc
+	@:
+
+.INTERMEDIATE: sgx_sign_enc
+sgx_sign_enc: enc.manifest
+	gramine-sgx-sign \
+		--manifest $< \
+		--output $<.sgx
+
+.PHONY: clean
+clean:
+	$(RM) enc.manifest enc.manifest.sgx enc.sig OUTPUT* *.PID TEST_STDOUT TEST_STDERR
+	$(RM) -r scripts/__pycache__
+
+
+.PHONY: distclean
+distclean: clean

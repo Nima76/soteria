@@ -1,0 +1,19 @@
+version: '3.9'
+
+services:
+
+  # FHE ALL-IN-ONE
+  fhe-hybrid:
+    build: ./enc
+    container_name: fhe-hybrid
+    volumes:
+      - /home/nima/paper/datasets/:/bdt/build/tee_data
+    command: tail -f /dev/null
+    networks:
+      - soteria_network
+    devices:
+    - /dev/sgx/enclave
+networks:
+  soteria_network:
+    name: "soteria_network"
+
