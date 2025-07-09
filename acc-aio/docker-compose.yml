@@ -3,14 +3,21 @@ version: '3.9'
 services:
 
   # FHE ALL-IN-ONE
-  fhe-all-in-one:
+  acc-all-in-one:
     build: ./enc
-    container_name: fhe-aio
+    container_name: acc-aio
     volumes:
       - /home/nima/paper/datasets/:/bdt/build/tee_data
     command: tail -f /dev/null
     networks:
       - soteria_network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 networks:
   soteria_network:

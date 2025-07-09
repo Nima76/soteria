@@ -48,10 +48,10 @@ def clean_test_environment():
     print("\nCleaning test environment...")
     try:
         run_command("""
-            docker exec fhe-aio sh -c "rm -rf /bdt/build/data/* /bdt/build/results/* /bdt/build/private_data/* /bdt/build/cryptocontext/* /bdt/build/dec_results/*" && \\
+            docker exec acc-aio sh -c "rm -rf /bdt/build/data/* /bdt/build/results/* /bdt/build/private_data/* /bdt/build/cryptocontext/* /bdt/build/dec_results/*" && \\
             echo "Cleaning volumes done!" && \\
             echo "============ Results ===============" && \\
-            docker exec fhe-aio ls /bdt/build/results/ /bdt/build/private_data/ /bdt/build/cryptocontext/ || true && \\
+            docker exec acc-aio ls /bdt/build/results/ /bdt/build/private_data/ /bdt/build/cryptocontext/ || true && \\
             echo "============================="
         """)
     except Exception as e:
@@ -61,7 +61,7 @@ def clean_test_environment():
 def get_file_sizes():
     """Get the sizes of generated key and encrypted files in bytes"""
     try:
-        output = run_command("docker exec fhe-aio ls -la /bdt/build/data")
+        output = run_command("docker exec acc-aio ls -la /bdt/build/data")
 
         # Initialize sizes
         sizes = {
@@ -109,7 +109,7 @@ def run_encryption(security, depth, modulus):
     print("\nRunning FHE encryption...")
     print("=============================")
     
-    run_command(f"docker exec fhe-aio ./fhe-enc --security {security} --depth {depth} --modulus {modulus}")
+    run_command(f"docker exec acc-aio ./fhe-enc --security {security} --depth {depth} --modulus {modulus}")
     print("Encryption completed")
 
 def run_main_computation():
@@ -117,7 +117,7 @@ def run_main_computation():
     print("\nRunning FHE main...")
     print("=============================")
     
-    run_command("docker exec fhe-aio ./fhe-main")
+    run_command("docker exec acc-aio ./fhe-main")
     print("Main computation completed")
 
 def run_decryption():
@@ -125,7 +125,7 @@ def run_decryption():
     print("\nRunning FHE decryption...")
     print("=============================")
     
-    result = run_command("docker exec fhe-aio ./fhe-dec")
+    result = run_command("docker exec acc-aio ./fhe-dec")
     print("Decryption completed")
     return result
 
@@ -133,9 +133,9 @@ def copy_csv_files_from_container():
     """Copy CSV timing files from container to host"""
     try:
         # Copy CSV files from container to host
-        run_command("docker cp fhe-aio:/bdt/build/enc_timing_results.csv ./enc_timing_results.csv")
-        run_command("docker cp fhe-aio:/bdt/build/main_timing_results.csv ./main_timing_results.csv") 
-        run_command("docker cp fhe-aio:/bdt/build/dec_timing_results.csv ./dec_timing_results.csv")
+        run_command("docker cp acc-aio:/bdt/build/enc_timing_results.csv ./enc_timing_results.csv")
+        run_command("docker cp acc-aio:/bdt/build/main_timing_results.csv ./main_timing_results.csv") 
+        run_command("docker cp acc-aio:/bdt/build/dec_timing_results.csv ./dec_timing_results.csv")
         print("CSV files copied from container successfully")
     except Exception as e:
         logger.error(f"Failed to copy CSV files: {str(e)}")
