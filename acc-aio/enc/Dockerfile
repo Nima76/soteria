@@ -1,6 +1,6 @@
 #FROM ubuntu:20.04
 
-FROM nimafrj/openfhe103:cpu
+FROM nimafrj/openfhe103:gpu
 
 WORKDIR /usr/src/app
 # Install dependencies

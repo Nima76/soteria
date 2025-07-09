@@ -113,12 +113,86 @@ int main()
     auto start_total = std::chrono::high_resolution_clock::now();
     
     auto [depth, modulus, security] = loadConfigParameters();
-    
+        // 16, 512, 2, 8192, 2, 2, 3)
+    int p1 = 16;
+    int p2 = 512;
+    int p3 = 2;
+    int p4 = 8192;
+    int p5 = 2;
+    int p6 = 2;
+    int p7 = 3;
+
+    if (depth == 1) {
+        std::cerr << "using default configuration for GPU-1: " 
+            << p1 << ", " << p2 << ", " << p3 << ", "
+            << p4 << ", " << p5 << ", " << p6 << ", " << p7 << std::endl;
+
+    } else if (depth >= 2 && depth <= 5) {
+        p1 = 32;
+        p2 = 512;
+        p3 = 6;
+        p4 = 16384;
+        p5 = 2;
+        p6 = 6;
+        p7 = 7;
+        std::cerr << "using configuration for GPU-5: " 
+            << p1 << ", " << p2 << ", " << p3 << ", "
+            << p4 << ", " << p5 << ", " << p6 << ", " << p7 << std::endl;
+
+    } else if (depth > 5 && depth <= 12) {
+        p1 = 64;
+        p2 = 512;
+        p3 = 25;
+        p4 = 32768;
+        p5 = 4;
+        p6 = 13;
+        p7 = 14;
+        std::cerr << "using configuration for GPU-12: " 
+            << p1 << ", " << p2 << ", " << p3 << ", "
+            << p4 << ", " << p5 << ", " << p6 << ", " << p7 << std::endl;
+    } else if (depth > 12 && depth <= 24) {
+        p1 = 128;
+        p2 = 512;
+        p3 = 25;
+        p4 = 65536;
+        p5 = 7;
+        p6 = 25;
+        p7 = 26;
+        std::cerr << "using configuration for GPU-24: " 
+            << p1 << ", " << p2 << ", " << p3 << ", "
+            << p4 << ", " << p5 << ", " << p6 << ", " << p7 << std::endl;
+
+    } else if (depth > 24 && depth <= 48) {
+        p1 = 128;
+        p2 = 512;
+        p3 = 50;
+        p4 = 65536;
+        p5 = 12;
+        p6 = 49;
+        p7 = 50;
+        std::cerr << "using configuration for GPU-48: " 
+            << p1 << ", " << p2 << ", " << p3 << ", "
+            << p4 << ", " << p5 << ", " << p6 << ", " << p7 << std::endl;
+
+    } else {
+        std::cerr << "Error: Unsupported depth value. Please use a depth between 1 and 10." 
+            << std::endl;
+        return 0;
+
+    }
+
     //getting the depth
     //int depth = calculateDepth(DATAFOLDER);
     //int depth = atoi(argv[1]);
     
-    // Time deserialization
+    #if defined(WITH_CUDA)
+	// Access the singleton instance of cudaDataUtils
+	cudaDataUtils& cudaUtils = cudaDataUtils::getInstance();
+	// Set GPU configuration - Note: suitable for T4 in AzureVM
+	// ringDim = 32768, sizeP = 3, sizeQ = 9, PHatModq_size_y = 10
+	cudaUtils.initialize(p1, p2, p3, p4, p5, p6, p7);
+	#endif
+
     auto start_deserialize = std::chrono::high_resolution_clock::now();
     
     //getting the crypto-context and the the public keys
