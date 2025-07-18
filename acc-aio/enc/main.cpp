@@ -108,9 +108,8 @@ void saveTimingToCSV(const std::string& phase,
 //                                         //
 /////////////////////////////////////////////
 
-int main()
+int main(int argc, char* argv[])
 {
-    auto start_total = std::chrono::high_resolution_clock::now();
     
     auto [depth, modulus, security] = loadConfigParameters();
         // 16, 512, 2, 8192, 2, 2, 3)
@@ -121,7 +120,19 @@ int main()
     int p5 = 2;
     int p6 = 2;
     int p7 = 3;
-
+    if (argc >=8){
+        p1 = atoi(argv[1]); // gpu blocks
+        p2 = atoi(argv[2]); // gpu threads
+        p3 = atoi(argv[3]); // streams
+        p4 = atoi(argv[4]); // ringDim
+        p5 = atoi(argv[5]); // sizeP
+        p6 = atoi(argv[6]); // sizeQ
+        p7 = atoi(argv[7]); // paramSizeY
+        std::cout << "Using GPU parameters from command line: "
+                  << p1 << ", " << p2 << ", " << p3 << ", "
+                  << p4 << ", " << p5 << ", " << p6 << ", " << p7 << std::endl;
+    }
+    else {
     if (depth == 1) {
         std::cerr << "using default configuration for GPU-1: " 
             << p1 << ", " << p2 << ", " << p3 << ", "
@@ -180,7 +191,7 @@ int main()
         return 0;
 
     }
-
+    }
     //getting the depth
     //int depth = calculateDepth(DATAFOLDER);
     //int depth = atoi(argv[1]);
@@ -192,7 +203,8 @@ int main()
 	// ringDim = 32768, sizeP = 3, sizeQ = 9, PHatModq_size_y = 10
 	cudaUtils.initialize(p1, p2, p3, p4, p5, p6, p7);
 	#endif
-
+    
+    auto start_total = std::chrono::high_resolution_clock::now();
     auto start_deserialize = std::chrono::high_resolution_clock::now();
     
     //getting the crypto-context and the the public keys
@@ -284,7 +296,10 @@ int main()
     
     //////////////////////////////
     //////////////////////////////
-      
+    #if defined(WITH_CUDA)
+    cudaUtils.destroy();
+    #endif
+  
     //main return value
     return 0;
 }
