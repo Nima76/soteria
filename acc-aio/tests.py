@@ -37,7 +37,7 @@ def start_docker_services():
     """Start all Docker services"""
     print("Starting Docker services...")
     try:
-        run_command("docker compose up --build -d")
+        run_command("sudo docker compose up --build -d")
         print("Docker services started successfully")
     except Exception as e:
         logger.error(f"Failed to start Docker services: {str(e)}")
@@ -48,10 +48,10 @@ def clean_test_environment():
     print("\nCleaning test environment...")
     try:
         run_command("""
-            docker exec acc-aio sh -c "rm -rf /bdt/build/data/* /bdt/build/results/* /bdt/build/private_data/* /bdt/build/cryptocontext/* /bdt/build/dec_results/*" && \\
+            sudo docker exec acc-aio sh -c "rm -rf /bdt/build/data/* /bdt/build/results/* /bdt/build/private_data/* /bdt/build/cryptocontext/* /bdt/build/dec_results/*" && \\
             echo "Cleaning volumes done!" && \\
             echo "============ Results ===============" && \\
-            docker exec acc-aio ls /bdt/build/results/ /bdt/build/private_data/ /bdt/build/cryptocontext/ || true && \\
+            sudo docker exec acc-aio ls /bdt/build/results/ /bdt/build/private_data/ /bdt/build/cryptocontext/ || true && \\
             echo "============================="
         """)
     except Exception as e:
@@ -61,7 +61,7 @@ def clean_test_environment():
 def get_file_sizes():
     """Get the sizes of generated key and encrypted files in bytes"""
     try:
-        output = run_command("docker exec acc-aio ls -la /bdt/build/data")
+        output = run_command("sudo docker exec acc-aio ls -la /bdt/build/data")
 
         # Initialize sizes
         sizes = {
@@ -109,7 +109,7 @@ def run_encryption(security, depth, modulus):
     print("\nRunning FHE encryption...")
     print("=============================")
     
-    run_command(f"docker exec acc-aio ./fhe-enc --security {security} --depth {depth} --modulus {modulus}")
+    run_command(f"sudo docker exec acc-aio ./fhe-enc --security {security} --depth {depth} --modulus {modulus}")
     print("Encryption completed")
 
 def run_main_computation_old():
@@ -117,7 +117,7 @@ def run_main_computation_old():
     print("\nRunning FHE main...")
     print("=============================")
     
-    run_command("docker exec acc-aio ./fhe-main")
+    run_command("sudo docker exec acc-aio ./fhe-main")
     print("Main computation completed")
 
 def run_main_computation(gpu_params=None):
@@ -125,12 +125,12 @@ def run_main_computation(gpu_params=None):
     print("\nRunning FHE main...")
     print("=============================")
     
-    cmd = "docker exec acc-aio ./fhe-main"
+    cmd = "sudo docker exec acc-aio ./fhe-main"
     
     # If GPU parameters are provided, add them as command-line arguments
     if gpu_params:
         params_str = " ".join(str(param) for param in gpu_params)
-        cmd = f"docker exec acc-aio ./fhe-main {params_str}"
+        cmd = f"sudo docker exec acc-aio ./fhe-main {params_str}"
     
     run_command(cmd)
     print("Main computation completed")
@@ -141,7 +141,7 @@ def run_decryption():
     print("\nRunning FHE decryption...")
     print("=============================")
     
-    result = run_command("docker exec acc-aio ./fhe-dec")
+    result = run_command("sudo docker exec acc-aio ./fhe-dec")
     print("Decryption completed")
     return result
 
@@ -149,9 +149,9 @@ def copy_csv_files_from_container():
     """Copy CSV timing files from container to host"""
     try:
         # Copy CSV files from container to host
-        run_command("docker cp acc-aio:/bdt/build/enc_timing_results.csv ./enc_timing_results.csv")
-        run_command("docker cp acc-aio:/bdt/build/main_timing_results.csv ./main_timing_results.csv") 
-        run_command("docker cp acc-aio:/bdt/build/dec_timing_results.csv ./dec_timing_results.csv")
+        run_command("sudo docker cp acc-aio:/bdt/build/enc_timing_results.csv ./enc_timing_results.csv")
+        run_command("sudo docker cp acc-aio:/bdt/build/main_timing_results.csv ./main_timing_results.csv") 
+        run_command("sudo docker cp acc-aio:/bdt/build/dec_timing_results.csv ./dec_timing_results.csv")
         print("CSV files copied from container successfully")
     except Exception as e:
         logger.error(f"Failed to copy CSV files: {str(e)}")
