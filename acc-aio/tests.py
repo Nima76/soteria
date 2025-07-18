@@ -112,13 +112,29 @@ def run_encryption(security, depth, modulus):
     run_command(f"docker exec acc-aio ./fhe-enc --security {security} --depth {depth} --modulus {modulus}")
     print("Encryption completed")
 
-def run_main_computation():
+def run_main_computation_old():
     """Run main computation"""
     print("\nRunning FHE main...")
     print("=============================")
     
     run_command("docker exec acc-aio ./fhe-main")
     print("Main computation completed")
+
+def run_main_computation(gpu_params=None):
+    """Run main computation with optional GPU parameters"""
+    print("\nRunning FHE main...")
+    print("=============================")
+    
+    cmd = "docker exec acc-aio ./fhe-main"
+    
+    # If GPU parameters are provided, add them as command-line arguments
+    if gpu_params:
+        params_str = " ".join(str(param) for param in gpu_params)
+        cmd = f"docker exec acc-aio ./fhe-main {params_str}"
+    
+    run_command(cmd)
+    print("Main computation completed")
+
 
 def run_decryption():
     """Run decryption"""
@@ -400,6 +416,39 @@ def create_human_readable_summary(tests):
     except Exception as e:
         logger.error(f"Failed to create human-readable summary: {str(e)}")
 
+def load_gpu_parameters():
+    """Load GPU parameters from Book3.csv"""
+    gpu_params_map = {}
+    
+    try:
+        if os.path.exists('Book3.csv'):
+            with open('Book3.csv', 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Create a key from depth, modulus, security
+                    key = f"{row['depth']}_{row['modulus']}_{row['security']}"
+                    
+                    # Store GPU parameters
+                    gpu_params_map[key] = {
+                        'gpu_blocks': int(row['gpu blocks']),
+                        'gpu_threads': int(row['gpu threads']),
+                        'streams': int(row['streams']),
+                        'ringDim': int(row['ringDim']),
+                        'sizeP': int(row['sizeP']),
+                        'sizeQ': int(row['sizeQ']),
+                        'paramSizeY': int(row['paramSizeY'])
+                    }
+            
+            logger.info(f"Loaded GPU parameters for {len(gpu_params_map)} configurations from Book3.csv")
+            
+        else:
+            logger.warning("Book3.csv file not found. Using default GPU parameters.")
+    
+    except Exception as e:
+        logger.error(f"Failed to load GPU parameters: {str(e)}")
+    
+    return gpu_params_map
+
 def run_tests():
     """Run all tests from the CSV file"""
     # Check if tests.csv exists
@@ -408,6 +457,7 @@ def run_tests():
         sys.exit(1)
     
     # Read the tests.csv file
+    gpu_params_map = load_gpu_parameters()
     tests = []
     with open('tests.csv', 'r') as f:
         reader = csv.reader(f)
@@ -433,6 +483,24 @@ def run_tests():
         print(f"\n\n======= Running Test #{test['test_no']} =======")
         print(f"Parameters: depth={test['depth']}, security={test['security']}, modulus={test['modulus']}")
         logger.info(f"Starting Test #{test['test_no']} - Depth: {test['depth']}, Security: {test['security']}, Modulus: {test['modulus']}")
+        key = f"{test['depth']}_{test['modulus']}_{test['security']}"
+        
+        gpu_params = None
+        if key in gpu_params_map:
+            params = gpu_params_map[key]
+            gpu_params = [
+                params['gpu_blocks'],
+                params['gpu_threads'],
+                params['streams'],
+                params['ringDim'],
+                params['sizeP'],
+                params['sizeQ'],
+                params['paramSizeY']
+            ]
+            print(f"Found GPU parameters for configuration {key}: {gpu_params}")
+            logger.info(f"Using GPU parameters for Test #{test['test_no']}: {gpu_params}")
+        else:
+            logger.warning(f"No GPU parameters found for configuration {key}. Using default.")
         
         try:
             # Run the test 4 times
@@ -454,7 +522,7 @@ def run_tests():
                         logger.info(f"File sizes for Test #{test['test_no']}: {file_sizes}")
                         
                     # Run main computation
-                    run_main_computation()
+                    run_main_computation(gpu_params)
                     
                     # Run decryption
                     dec_results = run_decryption()
