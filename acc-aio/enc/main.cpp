@@ -120,7 +120,7 @@ int main(int argc, char* argv[])
     int p5 = 2;
     int p6 = 2;
     int p7 = 3;
-    if (argc >=8){
+    if (argc >=7){
         p1 = atoi(argv[1]); // gpu blocks
         p2 = atoi(argv[2]); // gpu threads
         p3 = atoi(argv[3]); // streams
