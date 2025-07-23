@@ -19,15 +19,19 @@ logger.configure(handlers=[
 ])
 
 
-def run_command(cmd):
+def run_command(cmd, printer=True):
     commands = cmd.split(',')
     # Remove any whitespace
     commands = [command.strip() for command in commands]
-    print('========================================')
-    print (f'Running command: {cmd}')
+    if printer:
+        print('========================================')
+        print (f'Running command: {cmd}')
+    else:
+        print('========================================')
+        print(f'Running a command')
     result = subprocess.run(commands, shell=True, stdout=subprocess.PIPE)
     stdout = result.stdout.decode('utf-8')
-    print(f'=========== output of {cmd} ===========')
+    print(f'{"#"*20} output of {cmd} {"#"*20}')
     print(stdout)
     print('========================================')
     return stdout
@@ -38,7 +42,7 @@ def start_docker_services():
     print("Starting Docker services...")
     try:
         run_command("sudo docker compose up --build -d")
-        print("Docker services started successfully")
+        # print("Docker services started successfully")
     except Exception as e:
         logger.error(f"Failed to start Docker services: {str(e)}")
         sys.exit(1)
@@ -53,7 +57,7 @@ def clean_test_environment():
             echo "============ Results ===============" && \\
             sudo docker exec acc-aio ls /bdt/build/results/ /bdt/build/private_data/ /bdt/build/cryptocontext/ || true && \\
             echo "============================="
-        """)
+        """, printer=False)
     except Exception as e:
         logger.error(f"Failed to clean test environment: {str(e)}")
         raise
@@ -106,41 +110,32 @@ def get_file_sizes():
 
 def run_encryption(security, depth, modulus):
     """Run encryption with specified parameters"""
-    print("\nRunning FHE encryption...")
-    print("=============================")
-    
+    print("Running FHE encryption...")
     run_command(f"sudo docker exec acc-aio ./fhe-enc --security {security} --depth {depth} --modulus {modulus}")
     print("Encryption completed")
 
 def run_main_computation_old():
     """Run main computation"""
-    print("\nRunning FHE main...")
-    print("=============================")
-    
+    print("Running FHE main...")
     run_command("sudo docker exec acc-aio ./fhe-main")
     print("Main computation completed")
 
 def run_main_computation(gpu_params=None):
     """Run main computation with optional GPU parameters"""
-    print("\nRunning FHE main...")
+    print("Running FHE main...")
     print("=============================")
-    
     cmd = "sudo docker exec acc-aio ./fhe-main"
-    
     # If GPU parameters are provided, add them as command-line arguments
     if gpu_params:
         params_str = " ".join(str(param) for param in gpu_params)
         cmd = f"sudo docker exec acc-aio ./fhe-main {params_str}"
-    
     run_command(cmd)
     print("Main computation completed")
 
 
 def run_decryption():
     """Run decryption"""
-    print("\nRunning FHE decryption...")
-    print("=============================")
-    
+    print("Running FHE decryption...")
     result = run_command("sudo docker exec acc-aio ./fhe-dec")
     print("Decryption completed")
     return result
@@ -421,8 +416,8 @@ def load_gpu_parameters():
     gpu_params_map = {}
     
     try:
-        if os.path.exists('Book3.csv'):
-            with open('Book3.csv', 'r') as f:
+        if os.path.exists('tests.csv'):
+            with open('tests.csv', 'r') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     # Create a key from depth, modulus, security
@@ -442,7 +437,7 @@ def load_gpu_parameters():
             logger.info(f"Loaded GPU parameters for {len(gpu_params_map)} configurations from Book3.csv")
             
         else:
-            logger.warning("Book3.csv file not found. Using default GPU parameters.")
+            logger.warning("tests.csv file not found. Using default GPU parameters.")
     
     except Exception as e:
         logger.error(f"Failed to load GPU parameters: {str(e)}")
@@ -461,7 +456,7 @@ def run_tests():
     tests = []
     with open('tests.csv', 'r') as f:
         reader = csv.reader(f)
-        print(reader)
+        # print(reader)
         header = next(reader)  # Skip the header
         for row in reader:
             # Parse row data
